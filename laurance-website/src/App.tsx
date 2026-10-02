@@ -16,8 +16,12 @@ function App() {
   const [progress, setProgress] = useState<ProgressData>({});
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
+  
+  // 新增：密碼與儲存訊息狀態
+  const [password, setPassword] = useState('');
+  const [saveMessage, setSaveMessage] = useState('');
 
-  // Load progress from localStorage
+  // 載入進度 (只在網頁剛打開時執行一次)
   useEffect(() => {
     const saved = localStorage.getItem('sanya-prep-progress');
     if (saved) {
@@ -25,10 +29,7 @@ function App() {
     }
   }, []);
 
-  // Save progress to localStorage
-  useEffect(() => {
-    localStorage.setItem('sanya-prep-progress', JSON.stringify(progress));
-  }, [progress]);
+  // 注意：我們移除了原本自動寫入 localStorage 的 useEffect，改為手動儲存
 
   const toggleComplete = (week: number, day: string) => {
     const key = `w${week}-${day}`;
@@ -39,6 +40,7 @@ function App() {
         note: prev[key]?.note || ''
       }
     }));
+    setSaveMessage(''); // 清除之前的儲存訊息
   };
 
   const saveNote = (week: number, day: string) => {
@@ -52,12 +54,25 @@ function App() {
     }));
     setEditingNote(null);
     setNoteText('');
+    setSaveMessage(''); // 清除之前的儲存訊息
   };
 
   const openNote = (week: number, day: string) => {
     const key = `w${week}-${day}`;
     setNoteText(progress[key]?.note || '');
     setEditingNote(key);
+  };
+
+  // 新增：處理密碼驗證與儲存
+  const handleSave = () => {
+    if (password === '19901112') {
+      localStorage.setItem('sanya-prep-progress', JSON.stringify(progress));
+      setSaveMessage('Saved successfully!');
+      setPassword(''); // 儲存後清空密碼欄位
+      setTimeout(() => setSaveMessage(''), 3000); // 3秒後隱藏成功訊息
+    } else {
+      setSaveMessage('Incorrect password!');
+    }
   };
 
   const phaseWeeks = allWeeks.filter(w => w.phase === activePhase);
@@ -338,7 +353,7 @@ function App() {
                     {hasNote && editingNote !== key && (
                       <div className="px-4 pb-4">
                         <div className="bg-yellow-900/10 border border-yellow-800/30 rounded-md p-3">
-                          <p className="text-xs text-yellow-500 font-bold uppercase mb-1"> Note</p>
+                          <p className="text-xs text-yellow-500 font-bold uppercase mb-1">📝 Note</p>
                           <p className="text-sm text-yellow-200/80">{dayProgress.note}</p>
                         </div>
                       </div>
@@ -363,7 +378,7 @@ function App() {
                               onClick={() => saveNote(currentWeekData.week, day.day)}
                               className="px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded uppercase transition-colors"
                             >
-                              儲存
+                              確認備註
                             </button>
                             <button
                               onClick={() => { setEditingNote(null); setNoteText(''); }}
@@ -381,6 +396,45 @@ function App() {
             </div>
           </div>
         )}
+
+        {/* 新增：密碼保護的儲存區塊 */}
+        <div className="mt-8 bg-gray-900 border border-gray-700 rounded-lg p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+            <h3 className="font-oswald text-lg font-bold uppercase text-white">Save Weekly Progress</h3>
+          </div>
+          <p className="text-sm text-gray-400 mb-4">
+            Please enter your password to save all completed sessions and notes for this week.
+          </p>
+          <div className="flex flex-col md:flex-row gap-4 items-end">
+            <div className="flex-1 w-full">
+              <label className="block text-xs text-gray-500 uppercase font-bold mb-1">Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setSaveMessage(''); // 輸入時清除舊訊息
+                }}
+                placeholder="Enter password to unlock save..."
+                className="w-full bg-black border border-gray-600 rounded p-3 text-white placeholder-gray-600 focus:border-red-500 focus:outline-none transition-colors"
+              />
+            </div>
+            <button
+              onClick={handleSave}
+              className="w-full md:w-auto px-8 py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded uppercase tracking-wider transition-all transform hover:scale-105 active:scale-95"
+            >
+              Save Changes
+            </button>
+          </div>
+          {saveMessage && (
+            <div className={`mt-4 p-3 rounded-md text-sm font-bold text-center ${
+              saveMessage.includes('success') ? 'bg-green-900/30 text-green-400 border border-green-800' : 'bg-red-900/30 text-red-400 border border-red-800'
+            }`}>
+              {saveMessage}
+            </div>
+          )}
+        </div>
       </main>
 
       {/* Footer */}
