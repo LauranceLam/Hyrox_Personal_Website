@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+:root {
+  --font-oswald: 'Oswald', sans-serif;
+  --font-inter: 'Inter', sans-serif;
+}
+
+/* Custom scrollbar hide utility */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Base styles */
+body {
+  font-family: var(--font-inter);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Oswald font utility */
+.font-oswald {
+  font-family: var(--font-oswald);
+}
+
+/* Custom animations */
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3s ease-in-out infinite;
+}
+
+/* Selection color */
+::selection {
+  background-color: rgba(220, 38, 38, 0.3);
+  color: white;
+}
+
+/* Smooth transitions */
+* {
+  scroll-behavior: smooth;
+}
+
+/* Custom focus styles */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid rgba(220, 38, 38, 0.5);
+  outline-offset: 2px;
+}
