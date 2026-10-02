@@ -28,19 +28,19 @@ export const phases: Phase[] = [
   { 
     id: 1, 
     name: 'Phase 1: Build Engine & Heavy Pro Base', 
-    weeks: 'Weeks 1-6 From 2024-09-02 to 2024-10-13', 
+    weeks: 'Weeks 1-6 From 2026-09-06 to 2026-10-17', 
     description: 'Focus on building Pro-level strength capacity, foundational aerobic volume, and fixing Sled and Burpee movement efficiency.' 
   },
   { 
     id: 2, 
     name: 'Phase 2: Raise Your Pace & Target Weakness Fixes', 
-    weeks: 'Weeks 7-10 From 2024-10-14 to 2024-11-10', 
+    weeks: 'Weeks 7-10 From 2026-10-18 to 2026-11-21', 
     description: 'Shift focus toward race-pace compromised running, high-volume station fatigue, and cutting down transition (Roxzone) delays.' 
   },
   { 
     id: 3, 
     name: 'Phase 3: Race Ready & Sanya Pro Taper', 
-    weeks: 'Weeks 11-13 From 2024-11-11 to 2024-12-05', 
+    weeks: 'Weeks 11-13 From 2026-11-22 to 2026-12-06', 
     description: 'Reduce training volume while keeping movement intensity high to sharpen the central nervous system and achieve peak race freshness.' 
   }
 ];
