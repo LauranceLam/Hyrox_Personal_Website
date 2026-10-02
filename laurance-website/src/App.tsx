@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import localforage from 'localforage';
 import { allWeeks, phases } from './trainingData';
 
 interface DayProgress {
   completed: boolean;
   note: string;
+  image?: string; // 新增：儲存圖片的 Base64 字串
 }
 
 interface ProgressData {
@@ -17,19 +19,26 @@ function App() {
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
   
-  // 新增：密碼與儲存訊息狀態
   const [password, setPassword] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  // 載入進度 (只在網頁剛打開時執行一次)
+  // 載入進度 (使用 localforage)
   useEffect(() => {
-    const saved = localStorage.getItem('sanya-prep-progress');
-    if (saved) {
-      setProgress(JSON.parse(saved));
-    }
+    const loadProgress = async () => {
+      try {
+        const saved = await localforage.getItem<ProgressData>('sanya-prep-progress');
+        if (saved) {
+          setProgress(saved);
+        }
+      } catch (err) {
+        console.error('Failed to load progress:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadProgress();
   }, []);
-
-  // 注意：我們移除了原本自動寫入 localStorage 的 useEffect，改為手動儲存
 
   const toggleComplete = (week: number, day: string) => {
     const key = `w${week}-${day}`;
@@ -37,10 +46,11 @@ function App() {
       ...prev,
       [key]: {
         completed: !prev[key]?.completed,
-        note: prev[key]?.note || ''
+        note: prev[key]?.note || '',
+        image: prev[key]?.image // 保留原有的圖片
       }
     }));
-    setSaveMessage(''); // 清除之前的儲存訊息
+    setSaveMessage('');
   };
 
   const saveNote = (week: number, day: string) => {
@@ -49,12 +59,13 @@ function App() {
       ...prev,
       [key]: {
         completed: prev[key]?.completed || false,
-        note: noteText
+        note: noteText,
+        image: prev[key]?.image // 保留原有的圖片
       }
     }));
     setEditingNote(null);
     setNoteText('');
-    setSaveMessage(''); // 清除之前的儲存訊息
+    setSaveMessage('');
   };
 
   const openNote = (week: number, day: string) => {
@@ -63,13 +74,63 @@ function App() {
     setEditingNote(key);
   };
 
-  // 新增：處理密碼驗證與儲存
-  const handleSave = () => {
+  // 新增：處理圖片上傳
+  const handleImageUpload = (week: number, day: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // 限制圖片大小 (例如最大 2MB)，避免儲存過慢
+    if (file.size > 2 * 1024 * 1024) {
+      alert('圖片過大！請上傳小於 2MB 的截圖。');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      const key = `w${week}-${day}`;
+      setProgress(prev => ({
+        ...prev,
+        [key]: {
+          completed: prev[key]?.completed || false,
+          note: prev[key]?.note || '',
+          image: base64String
+        }
+      }));
+      setSaveMessage('Image added. Remember to click "Save Changes" at the bottom!');
+    };
+    reader.readAsDataURL(file);
+    
+    // 清空 input，允許重複上傳同一張圖
+    event.target.value = '';
+  };
+
+  // 新增：處理刪除圖片
+  const handleRemoveImage = (week: number, day: string) => {
+    const key = `w${week}-${day}`;
+    setProgress(prev => {
+      const newData = { ...prev[key] };
+      delete newData.image;
+      return {
+        ...prev,
+        [key]: newData
+      };
+    });
+    setSaveMessage('Image removed. Remember to click "Save Changes" at the bottom!');
+  };
+
+  // 修改：使用 localforage 進行非同步儲存
+  const handleSave = async () => {
     if (password === '19901112') {
-      localStorage.setItem('sanya-prep-progress', JSON.stringify(progress));
-      setSaveMessage('Saved successfully!');
-      setPassword(''); // 儲存後清空密碼欄位
-      setTimeout(() => setSaveMessage(''), 3000); // 3秒後隱藏成功訊息
+      try {
+        await localforage.setItem('sanya-prep-progress', progress);
+        setSaveMessage('Saved successfully!');
+        setPassword('');
+        setTimeout(() => setSaveMessage(''), 3000);
+      } catch (err) {
+        console.error('Failed to save:', err);
+        setSaveMessage('Error saving data. Storage might be full.');
+      }
     } else {
       setSaveMessage('Incorrect password!');
     }
@@ -91,6 +152,14 @@ function App() {
   const getProgressPercent = () => {
     return Math.round((getCompletedDays() / getTotalDays()) * 100);
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-black text-white flex items-center justify-center">
+        <div className="text-red-500 font-oswald text-xl animate-pulse">LOADING TRAINING DATA...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black text-white font-sans">
@@ -278,6 +347,7 @@ function App() {
                 const dayProgress = progress[key];
                 const isCompleted = dayProgress?.completed || false;
                 const hasNote = dayProgress?.note && dayProgress.note.trim() !== '';
+                const hasImage = !!dayProgress?.image;
 
                 return (
                   <div
@@ -351,7 +421,7 @@ function App() {
 
                     {/* Note Display */}
                     {hasNote && editingNote !== key && (
-                      <div className="px-4 pb-4">
+                      <div className="px-4 pb-2">
                         <div className="bg-yellow-900/10 border border-yellow-800/30 rounded-md p-3">
                           <p className="text-xs text-yellow-500 font-bold uppercase mb-1">📝 Note</p>
                           <p className="text-sm text-yellow-200/80">{dayProgress.note}</p>
@@ -361,7 +431,7 @@ function App() {
 
                     {/* Note Editor */}
                     {editingNote === key && (
-                      <div className="px-4 pb-4">
+                      <div className="px-4 pb-2">
                         <div className="bg-gray-800 border border-gray-600 rounded-md p-3">
                           <p className="text-xs text-gray-400 font-bold uppercase mb-2">
                             備註: 記錄未完成原因 / 訓練改動內容
@@ -390,6 +460,44 @@ function App() {
                         </div>
                       </div>
                     )}
+
+                    {/* Image Upload & Preview Section */}
+                    <div className="px-4 pb-4">
+                      {hasImage ? (
+                        <div className="relative mt-2 group">
+                          <img 
+                            src={dayProgress.image} 
+                            alt="Training Record" 
+                            className="max-w-full h-auto rounded-md border border-gray-600 shadow-lg"
+                          />
+                          <button
+                            onClick={() => handleRemoveImage(currentWeekData.week, day.day)}
+                            className="absolute top-2 right-2 bg-red-600 hover:bg-red-500 text-white rounded-full w-8 h-8 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                            title="Remove Image"
+                          >
+                            ✕
+                          </button>
+                          <p className="text-xs text-gray-500 mt-1 text-center">Image attached (Remember to Save)</p>
+                        </div>
+                      ) : (
+                        <label className="mt-2 flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-700 rounded-md cursor-pointer hover:border-red-500 hover:bg-gray-800/50 transition-all group">
+                          <div className="text-center">
+                            <svg className="mx-auto h-8 w-8 text-gray-500 group-hover:text-red-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <p className="mt-1 text-xs text-gray-400 group-hover:text-white">Click to upload photos</p>
+                            <p className="text-[10px] text-gray-600">Max 2MB</p>
+                          </div>
+                          <input 
+                            type="file" 
+                            className="hidden" 
+                            accept="image/*"
+                            onChange={(e) => handleImageUpload(currentWeekData.week, day.day, e)}
+                          />
+                        </label>
+                      )}
+                    </div>
+
                   </div>
                 );
               })}
@@ -397,14 +505,14 @@ function App() {
           </div>
         )}
 
-        {/* 新增：密碼保護的儲存區塊 */}
+        {/* Password Protected Save Section */}
         <div className="mt-8 bg-gray-900 border border-gray-700 rounded-lg p-5">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
             <h3 className="font-oswald text-lg font-bold uppercase text-white">Save Weekly Progress</h3>
           </div>
           <p className="text-sm text-gray-400 mb-4">
-            Please enter your password to save all completed sessions and notes for this week.
+            Please enter your password to save all completed sessions, notes, and uploaded images for this week.
           </p>
           <div className="flex flex-col md:flex-row gap-4 items-end">
             <div className="flex-1 w-full">
@@ -414,7 +522,7 @@ function App() {
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
-                  setSaveMessage(''); // 輸入時清除舊訊息
+                  setSaveMessage('');
                 }}
                 placeholder="Enter password to unlock save..."
                 className="w-full bg-black border border-gray-600 rounded p-3 text-white placeholder-gray-600 focus:border-red-500 focus:outline-none transition-colors"
@@ -429,7 +537,9 @@ function App() {
           </div>
           {saveMessage && (
             <div className={`mt-4 p-3 rounded-md text-sm font-bold text-center ${
-              saveMessage.includes('success') ? 'bg-green-900/30 text-green-400 border border-green-800' : 'bg-red-900/30 text-red-400 border border-red-800'
+              saveMessage.includes('success') || saveMessage.includes('added') || saveMessage.includes('removed')
+                ? 'bg-green-900/30 text-green-400 border border-green-800' 
+                : 'bg-red-900/30 text-red-400 border border-red-800'
             }`}>
               {saveMessage}
             </div>
