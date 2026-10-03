@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
-import localforage from 'localforage';
+import { supabase } from './supabaseClient';
 import { allWeeks, phases } from './trainingData';
 
 interface DayProgress {
   completed: boolean;
   note: string;
-  image?: string; // 新增：儲存圖片的 Base64 字串
+  image?: string;
 }
 
 interface ProgressData {
   [key: string]: DayProgress;
 }
+
+// 我們使用一個固定的 ID 來實現跨裝置共享同一份紀錄
+const USER_ID = 'laurance-shared-record';
 
 function App() {
   const [activePhase, setActivePhase] = useState(1);
@@ -22,14 +25,22 @@ function App() {
   const [password, setPassword] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // 載入進度 (使用 localforage)
+  // 載入進度：從 Supabase 雲端讀取
   useEffect(() => {
     const loadProgress = async () => {
       try {
-        const saved = await localforage.getItem<ProgressData>('sanya-prep-progress');
-        if (saved) {
-          setProgress(saved);
+        const { data, error } = await supabase
+          .from('training_progress')
+          .select('data')
+          .eq('id', USER_ID)
+          .single();
+
+        if (error && error.code !== 'PGRST116') { // PGRST116 代表找不到資料，這是正常的初始狀態
+          console.error('Error loading progress:', error);
+        } else if (data) {
+          setProgress(data.data);
         }
       } catch (err) {
         console.error('Failed to load progress:', err);
@@ -47,7 +58,7 @@ function App() {
       [key]: {
         completed: !prev[key]?.completed,
         note: prev[key]?.note || '',
-        image: prev[key]?.image // 保留原有的圖片
+        image: prev[key]?.image
       }
     }));
     setSaveMessage('');
@@ -60,7 +71,7 @@ function App() {
       [key]: {
         completed: prev[key]?.completed || false,
         note: noteText,
-        image: prev[key]?.image // 保留原有的圖片
+        image: prev[key]?.image
       }
     }));
     setEditingNote(null);
@@ -74,38 +85,52 @@ function App() {
     setEditingNote(key);
   };
 
-  // 新增：處理圖片上傳
-  const handleImageUpload = (week: number, day: string, event: React.ChangeEvent<HTMLInputElement>) => {
+  // 處理圖片上傳到 Supabase Storage
+  const handleImageUpload = async (week: number, day: string, event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // 限制圖片大小 (例如最大 2MB)，避免儲存過慢
     if (file.size > 2 * 1024 * 1024) {
       alert('圖片過大！請上傳小於 2MB 的截圖。');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64String = reader.result as string;
+    setSaveMessage('Uploading image to cloud...');
+    
+    try {
+      // 使用固定檔名，這樣每次上傳同一天的圖片都會覆蓋舊的，節省空間
+      const filePath = `${USER_ID}/w${week}-${day}.jpg`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('training-photos')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // 獲取圖片的公開網址
+      const { data: { publicUrl } } = supabase.storage
+        .from('training-photos')
+        .getPublicUrl(filePath);
+
       const key = `w${week}-${day}`;
       setProgress(prev => ({
         ...prev,
         [key]: {
           completed: prev[key]?.completed || false,
           note: prev[key]?.note || '',
-          image: base64String
+          image: publicUrl
         }
       }));
-      setSaveMessage('Image added. Remember to click "Save Changes" at the bottom!');
-    };
-    reader.readAsDataURL(file);
+      setSaveMessage('Image uploaded to cloud! Remember to click "Save Changes" at the bottom.');
+    } catch (err) {
+      console.error('Upload error:', err);
+      setSaveMessage('Error uploading image. Please try again.');
+    }
     
-    // 清空 input，允許重複上傳同一張圖
     event.target.value = '';
   };
 
-  // 新增：處理刪除圖片
+  // 處理刪除圖片 (僅從本地狀態移除，並提示儲存)
   const handleRemoveImage = (week: number, day: string) => {
     const key = `w${week}-${day}`;
     setProgress(prev => {
@@ -116,20 +141,29 @@ function App() {
         [key]: newData
       };
     });
-    setSaveMessage('Image removed. Remember to click "Save Changes" at the bottom!');
+    setSaveMessage('Image removed from view. Remember to click "Save Changes" at the bottom!');
   };
 
-  // 修改：使用 localforage 進行非同步儲存
+  // 處理密碼驗證與雲端儲存
   const handleSave = async () => {
     if (password === '19901112') {
+      setIsSaving(true);
+      setSaveMessage('Saving to cloud...');
       try {
-        await localforage.setItem('sanya-prep-progress', progress);
-        setSaveMessage('Saved successfully!');
+        const { error } = await supabase
+          .from('training_progress')
+          .upsert({ id: USER_ID, data: progress }, { onConflict: 'id' });
+
+        if (error) throw error;
+
+        setSaveMessage('Saved successfully to the cloud!');
         setPassword('');
         setTimeout(() => setSaveMessage(''), 3000);
       } catch (err) {
-        console.error('Failed to save:', err);
-        setSaveMessage('Error saving data. Storage might be full.');
+        console.error('Save error:', err);
+        setSaveMessage('Error saving to cloud. Please check your connection.');
+      } finally {
+        setIsSaving(false);
       }
     } else {
       setSaveMessage('Incorrect password!');
@@ -156,7 +190,7 @@ function App() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <div className="text-red-500 font-oswald text-xl animate-pulse">LOADING TRAINING DATA...</div>
+        <div className="text-red-500 font-oswald text-xl animate-pulse">SYNCING WITH CLOUD...</div>
       </div>
     );
   }
@@ -477,7 +511,7 @@ function App() {
                           >
                             ✕
                           </button>
-                          <p className="text-xs text-gray-500 mt-1 text-center">Image attached (Remember to Save)</p>
+                          <p className="text-xs text-gray-500 mt-1 text-center">Image synced to cloud (Remember to Save)</p>
                         </div>
                       ) : (
                         <label className="mt-2 flex items-center justify-center w-full p-4 border-2 border-dashed border-gray-700 rounded-md cursor-pointer hover:border-red-500 hover:bg-gray-800/50 transition-all group">
@@ -485,7 +519,7 @@ function App() {
                             <svg className="mx-auto h-8 w-8 text-gray-500 group-hover:text-red-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
-                            <p className="mt-1 text-xs text-gray-400 group-hover:text-white">Click to upload photos</p>
+                            <p className="mt-1 text-xs text-gray-400 group-hover:text-white">Click to upload Garmin/Samsung Health screenshot</p>
                             <p className="text-[10px] text-gray-600">Max 2MB</p>
                           </div>
                           <input 
@@ -509,10 +543,10 @@ function App() {
         <div className="mt-8 bg-gray-900 border border-gray-700 rounded-lg p-5">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-            <h3 className="font-oswald text-lg font-bold uppercase text-white">Save Weekly Progress</h3>
+            <h3 className="font-oswald text-lg font-bold uppercase text-white">Save Weekly Progress to Cloud</h3>
           </div>
           <p className="text-sm text-gray-400 mb-4">
-            Please enter your password to save all completed sessions, notes, and uploaded images for this week.
+            Please enter your password to sync all completed sessions, notes, and uploaded images to the cloud.
           </p>
           <div className="flex flex-col md:flex-row gap-4 items-end">
             <div className="flex-1 w-full">
@@ -530,14 +564,17 @@ function App() {
             </div>
             <button
               onClick={handleSave}
-              className="w-full md:w-auto px-8 py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded uppercase tracking-wider transition-all transform hover:scale-105 active:scale-95"
+              disabled={isSaving}
+              className={`w-full md:w-auto px-8 py-3 text-white font-bold rounded uppercase tracking-wider transition-all transform hover:scale-105 active:scale-95 ${
+                isSaving ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-500'
+              }`}
             >
-              Save Changes
+              {isSaving ? 'Syncing...' : 'Save Changes'}
             </button>
           </div>
           {saveMessage && (
             <div className={`mt-4 p-3 rounded-md text-sm font-bold text-center ${
-              saveMessage.includes('success') || saveMessage.includes('added') || saveMessage.includes('removed')
+              saveMessage.includes('success') || saveMessage.includes('uploaded') || saveMessage.includes('removed')
                 ? 'bg-green-900/30 text-green-400 border border-green-800' 
                 : 'bg-red-900/30 text-red-400 border border-red-800'
             }`}>
