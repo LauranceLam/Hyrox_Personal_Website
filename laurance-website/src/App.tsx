@@ -85,7 +85,7 @@ function App() {
     setEditingNote(key);
   };
 
-  // 處理圖片上傳到 Supabase Storage
+    // 處理圖片上傳到 Supabase Storage
   const handleImageUpload = async (week: number, day: string, event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -112,13 +112,16 @@ function App() {
         .from('training-photos')
         .getPublicUrl(filePath);
 
+      // 🚨 關鍵修復：加上時間戳記，強制瀏覽器載入新圖片，避免顯示舊快取
+      const uniqueUrl = `${publicUrl}?t=${Date.now()}`;
+
       const key = `w${week}-${day}`;
       setProgress(prev => ({
         ...prev,
         [key]: {
           completed: prev[key]?.completed || false,
           note: prev[key]?.note || '',
-          image: publicUrl
+          image: uniqueUrl
         }
       }));
       setSaveMessage('Image uploaded to cloud! Remember to click "Save Changes" at the bottom.');
@@ -127,12 +130,25 @@ function App() {
       setSaveMessage('Error uploading image. Please try again.');
     }
     
+    // 清空 input，允許重複上傳同一張圖
     event.target.value = '';
   };
 
-  // 處理刪除圖片 (僅從本地狀態移除，並提示儲存)
-  const handleRemoveImage = (week: number, day: string) => {
+    // 處理刪除圖片 (從雲端真正刪除，並更新本地狀態)
+  const handleRemoveImage = async (week: number, day: string) => {
     const key = `w${week}-${day}`;
+    const filePath = `${USER_ID}/w${week}-${day}.jpg`;
+
+    // 🚨 進階修復：嘗試從雲端真正刪除圖片，節省你的 5GB 空間
+    try {
+      await supabase.storage
+        .from('training-photos')
+        .remove([filePath]);
+    } catch (err) {
+      console.error('Failed to delete image from cloud:', err);
+    }
+
+    // 更新本地狀態，讓圖片從畫面消失
     setProgress(prev => {
       const newData = { ...prev[key] };
       delete newData.image;
@@ -141,7 +157,7 @@ function App() {
         [key]: newData
       };
     });
-    setSaveMessage('Image removed from view. Remember to click "Save Changes" at the bottom!');
+    setSaveMessage('Image removed. Remember to click "Save Changes" at the bottom!');
   };
 
   // 處理密碼驗證與雲端儲存
